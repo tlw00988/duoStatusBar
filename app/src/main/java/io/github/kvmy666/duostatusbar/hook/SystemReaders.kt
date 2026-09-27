@@ -46,7 +46,8 @@ internal object SystemReaders {
         if (airplane) 0
         else {
             val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
-            val signal = tm?.signalStrength ?: current
+            val signal = tm?.signalStrength
+            if (signal == null) return@try current
 
             // Xiaomi's NR object is exposed internally as SignalStrength.mNr. Read it
             // directly instead of relying on newer CellSignalStrength collection APIs,
@@ -78,6 +79,23 @@ internal object SystemReaders {
         }
         return null
     }
+    private fun readMiuiLevel(cell: Any): Int? {
+        var cls: Class<*>? = cell.javaClass
+        while (cls != null) {
+            try {
+                val field = cls.getDeclaredField("miuiLevel")
+                field.isAccessible = true
+                return field.getInt(cell)
+            } catch (_: NoSuchFieldException) {
+                cls = cls.superclass
+            } catch (t: Throwable) {
+                L.w("miuiLevel: ${t.javaClass.simpleName}: ${t.message}")
+                return null
+            }
+        }
+        return null
+    }
+
     /** Whether the Wi-Fi radio is on at all — distinct from "connected", which is a signal level. */
     fun isWifiEnabled(context: Context, current: Boolean): Boolean = try {
         (context.getSystemService(Context.WIFI_SERVICE) as? WifiManager)?.isWifiEnabled ?: current
