@@ -113,6 +113,14 @@ internal class StockIconHider {
         hide(view)
     }
 
+    /** Applies the replacement policy to an icon arriving after the initial hide pass. */
+    fun hideReplacedView(view: View) {
+        when {
+            isBattery(view) -> hidePreserveSlot(view)
+            isNetworkIcon(view) -> hideAndCollapse(view)
+        }
+    }
+
     /** Puts every hidden view back as it was. Used when the element is switched off or torn down. */
     fun restore() {
         for (state in hiddenOriginals) {
