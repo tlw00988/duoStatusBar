@@ -46,7 +46,7 @@ internal object SystemReaders {
         if (airplane) 0
         else {
             val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
-            val signal = tm?.signalStrength ?: return@try current
+            val signal = tm?.signalStrength ?: current
 
             // Xiaomi's CellSignalStrengthNr carries the level used by MIUI's own status bar in
             // addition to the AOSP level. On the affected HyperOS build these can differ
