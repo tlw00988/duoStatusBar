@@ -41,24 +41,22 @@ internal object SystemReaders {
         current
     }
 
-    /** Cellular spheres 0..4. */
+    /** Cellular spheres 0..4. Prefer Xiaomi's own NR level when available. */
     fun cellLevel(context: Context, airplane: Boolean, current: Int): Int = try {
-        if (airplane) 0
-        else {
+        if (airplane) {
+            0
+        } else {
             val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
             val signal = tm?.signalStrength
-            if (signal == null) return@try current
-
-            // Xiaomi's NR object is exposed internally as SignalStrength.mNr. Read it
-            // directly instead of relying on newer CellSignalStrength collection APIs,
-            // because this module compiles against the public SDK.
-            val miuiLevel = readMiuiLevelFromNr(signal)
-                ?.takeIf { it in 0..4 }
-
-            (miuiLevel ?: signal.level).coerceIn(0, 4)
+            if (signal == null) {
+                current
+            } else {
+                val miuiLevel = readMiuiLevelFromNr(signal)?.takeIf { it in 0..4 }
+                (miuiLevel ?: signal.level).coerceIn(0, 4)
+            }
         }
     } catch (t: Throwable) {
-        L.w("cellLevel: ${t.message}")
+        L.w("cellLevel: " + t.message)
         current
     }
 
@@ -73,12 +71,13 @@ internal object SystemReaders {
             } catch (_: NoSuchFieldException) {
                 cls = cls.superclass
             } catch (t: Throwable) {
-                L.w("mNr: ${t.javaClass.simpleName}: ${t.message}")
+                L.w("mNr: " + t.javaClass.simpleName + ": " + t.message)
                 return null
             }
         }
         return null
     }
+
     private fun readMiuiLevel(cell: Any): Int? {
         var cls: Class<*>? = cell.javaClass
         while (cls != null) {
@@ -89,7 +88,7 @@ internal object SystemReaders {
             } catch (_: NoSuchFieldException) {
                 cls = cls.superclass
             } catch (t: Throwable) {
-                L.w("miuiLevel: ${t.javaClass.simpleName}: ${t.message}")
+                L.w("miuiLevel: " + t.javaClass.simpleName + ": " + t.message)
                 return null
             }
         }
