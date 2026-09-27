@@ -42,24 +42,29 @@ internal class StockIconHider {
             val child = container.getChildAt(i)
             if (child === keep) continue
             when {
-                isReplaced(child) -> hidePreserveSlot(child)
+                isBattery(child) -> hidePreserveSlot(child)
+                isNetworkIcon(child) -> hideAndCollapse(child)
                 child is ViewGroup -> hideReplaced(child, keep)
             }
         }
         logOnce.once("hide-replaced") {
-            L.i("only the replaced battery/Wi-Fi/cellular views hidden; other icons kept - FR-08b")
+            L.i("Duo replacement collapsed Wi-Fi/cellular slots and retained one battery-sized slot - FR-08b")
         }
     }
 
-    /** True when [view] is one of the icons Duo replaces; see [hideReplaced]. */
-    fun isReplaced(view: View): Boolean {
-        val slot = slotOf(view)
-        if (slot != null) {
-            val s = slot.lowercase()
-            return s == "battery" || s.startsWith("wifi") || s.startsWith("mobile")
-        }
-        // No readable slot: a battery view is still replaced, anything else is left for the user.
-        return view.javaClass.simpleName.contains("battery", ignoreCase = true)
+    /** True when [view] is one of the icons Duo replaces; see hideReplaced. */
+    fun isReplaced(view: View): Boolean = isBattery(view) || isNetworkIcon(view)
+
+    private fun isBattery(view: View): Boolean {
+        val slot = slotOf(view)?.lowercase()
+        return slot == "battery" || view.javaClass.simpleName.contains("battery", ignoreCase = true)
+    }
+
+    private fun isNetworkIcon(view: View): Boolean {
+        val slot = slotOf(view)?.lowercase()
+        return slot?.startsWith("wifi") == true || slot?.startsWith("mobile") == true ||
+                view.javaClass.simpleName.contains("wifi", ignoreCase = true) ||
+                view.javaClass.simpleName.contains("mobile", ignoreCase = true)
     }
 
     /** `StatusBarIconView.getSlot()`, or the OEM `getSlotTag()`; null when neither exists. */
@@ -95,12 +100,17 @@ internal class StockIconHider {
         }
     }
 
-    /** Hides a replaced icon without removing its layout slot, preventing the remaining icons from reflowing under Duo. */
+    /** Hides a replaced icon while preserving its layout slot; used for the single retained Duo slot. */
     fun hidePreserveSlot(view: View) {
         if (view.visibility != View.INVISIBLE) {
             rememberOriginal(view)
             view.visibility = View.INVISIBLE
         }
+    }
+
+    /** Hides a replaced network icon and removes its layout slot. */
+    fun hideAndCollapse(view: View) {
+        hide(view)
     }
 
     /** Puts every hidden view back as it was. Used when the element is switched off or torn down. */
