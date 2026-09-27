@@ -89,8 +89,11 @@ internal class DuoIconHost(private val context: Context) {
                     }
                     // FR-08b: with "hide other icons" off, only the icons Duo replaces are hidden; the
                     // silent/vibrate/alarm ones are left for the user.
-                    if (settings.hideOtherIcons || hider.isReplaced(view)) {
+                    if (settings.hideOtherIcons) {
                         hider.hide(view)
+                    } else if (hider.isReplaced(view)) {
+                        // Preserve the original slot so remaining status icons do not reflow under Duo.
+                        hider.hidePreserveSlot(view)
                     } else {
                         logOnce.once("kept:${view.javaClass.simpleName}") {
                             L.i("keeping a status icon: ${view.javaClass.simpleName} - FR-08b")
