@@ -46,13 +46,47 @@ internal object SystemReaders {
         if (airplane) 0
         else {
             val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
-            tm?.signalStrength?.level?.coerceIn(0, 4) ?: current
+            val signal = tm?.signalStrength ?: return@try current
+
+            // Xiaomi's CellSignalStrengthNr carries the level used by MIUI's own status bar in
+            // addition to the AOSP level. On the affected HyperOS build these can differ
+            // substantially (for example, level=1 while miuiLevel=4). Read the vendor value
+            // reflectively so the module stays buildable against the public Android SDK.
+            val miuiLevel = signal.cellSignalStrengths
+                .asSequence()
+                .mapNotNull { readMiuiLevel(it) }
+                .firstOrNull { it in 0..4 }
+
+            (miuiLevel ?: signal.level).coerceIn(0, 4)
         }
     } catch (t: Throwable) {
         L.w("cellLevel: ${t.message}")
         current
     }
 
+    /**
+     * Reads Xiaomi's private miuiLevel from a CellSignalStrength instance.
+     *
+     * This deliberately uses the runtime class rather than assuming a particular framework JAR:
+     * Xiaomi has moved/changed the private telephony implementation across releases. A failed
+     * lookup simply falls back to the standard SignalStrength level.
+     */
+    private fun readMiuiLevel(cell: Any): Int? {
+        var cls: Class<*>? = cell.javaClass
+        while (cls != null) {
+            try {
+                val field = cls.getDeclaredField("miuiLevel")
+                field.isAccessible = true
+                return field.getInt(cell)
+            } catch (_: NoSuchFieldException) {
+                cls = cls.superclass
+            } catch (t: Throwable) {
+                L.w("miuiLevel: ${t.javaClass.simpleName}: ${t.message}")
+                return null
+            }
+        }
+        return null
+    }
     /** Whether the Wi-Fi radio is on at all — distinct from "connected", which is a signal level. */
     fun isWifiEnabled(context: Context, current: Boolean): Boolean = try {
         (context.getSystemService(Context.WIFI_SERVICE) as? WifiManager)?.isWifiEnabled ?: current
