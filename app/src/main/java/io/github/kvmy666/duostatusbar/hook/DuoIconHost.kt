@@ -473,10 +473,14 @@ internal class DuoIconHost(private val context: Context) {
                 L.w("system_icons not found - status bar left untouched")
                 return false
             }
-            // HyperOS 4's MiuiStatusBatteryContainer is a custom ViewGroup. Injecting directly into it
-            // produces a real child but the OEM onMeasure/onLayout leaves that child at 0x0. Its parent
-            // (MiuiNotificationStatusContainer on the tested device) uses ordinary ViewGroup layout.
-            val target = injectionHost(stockTarget) ?: stockTarget
+            // HyperOS 4's OEM containers can collapse arbitrary injected children to 0x0.
+            // Use the plain status_bar_icons FrameLayout as the rendering host, while keeping
+            // stockTarget solely as the hiding target.
+            val target = findOverlayHost(statusBarRoot)
+            if (target == null) {
+                L.w("status_bar_icons overlay host not found - status bar left untouched")
+                return false
+            }
             root = statusBarRoot
             stockHost = stockTarget
             // Pin the slot width now, while the battery view still has its real width: once the stock
@@ -490,7 +494,10 @@ internal class DuoIconHost(private val context: Context) {
             }
             val side = geometry.sidePx(target, root)
             allowOverflow(target)
-            candidate.ui.layoutParams = layoutParamsFor(target, side)
+            // status_bar_icons is a plain FrameLayout on the tested HyperOS 4 build.
+            // Give the injected view an explicit square frame instead of letting an OEM parent
+            // infer/collapse its size.
+            candidate.ui.layoutParams = layoutParamsFor(target, side, side)
             target.addView(candidate.ui)
             host = target
             element = candidate
@@ -647,7 +654,7 @@ internal class DuoIconHost(private val context: Context) {
         return try {
             (view.parent as? ViewGroup)?.removeView(view)
             val freshStock = root?.let { findStatusIconsHost(it) } ?: target
-            val fresh = injectionHost(freshStock) ?: freshStock
+            val fresh = root?.let { findOverlayHost(it) } ?: target
             stockHost = freshStock
             host = fresh
             fresh.addView(view)
@@ -717,16 +724,32 @@ internal class DuoIconHost(private val context: Context) {
     }
 
     /**
-     * Selects a parent suitable for arbitrary injected children.
+     * Finds the plain overlay container used by the HyperOS status bar.
      *
-     * Xiaomi HyperOS 4 wraps the actual icon strip in MiuiStatusBatteryContainer. That OEM
-     * ViewGroup can measure unknown children as 0x0. Keeping the stock strip as a separate host
-     * lets us hide its icons without forcing Duo itself through that custom measurement path.
+     * On the tested HyperOS 4 build the hierarchy is:
+     *
+     *     StatusBarWindowView
+     *       status_bar_icons (FrameLayout, 1156x144)
+     *         status_bar_contents
+     *           system_icon_area (MiuiNotificationStatusContainer)
+     *
+     * Both OEM containers below status_bar_icons can collapse an injected child to 0x0.
+     * The FrameLayout is deliberately used as the rendering host instead.
      */
-    private fun injectionHost(stock: ViewGroup): ViewGroup? {
-        val parent = stock.parent as? ViewGroup ?: return null
-        if (parent === root) return null
-        return parent
+    private fun findOverlayHost(statusBarRoot: View): ViewGroup? {
+        val id = context.resources.getIdentifier("status_bar_icons", "id", rom.systemUiPackage)
+        if (id == 0) {
+            L.w("status_bar_icons id is unavailable in " + rom.systemUiPackage)
+            return null
+        }
+        val found = statusBarRoot.findViewById<View>(id)
+        val host = found as? ViewGroup
+        if (host != null) {
+            L.i("overlay host: status_bar_icons -> " + host.javaClass.simpleName + " " + host.width + "x" + host.height)
+        } else {
+            L.w("status_bar_icons found but is not a ViewGroup: " + (found?.javaClass?.name ?: "null"))
+        }
+        return host
     }
 
     /**
