@@ -44,15 +44,19 @@ class StockIconHiderTest {
     fun `hiding the replaced icons leaves the others visible`() {
         val strip = LinearLayout(context)
         val wifi = FakeIcon(context, "wifi")
+        val battery = FakeIcon(context, "battery")
         val silent = FakeIcon(context, "volume")
         val alarm = FakeIcon(context, "alarm_clock")
         strip.addView(wifi)
+        strip.addView(battery)
         strip.addView(silent)
         strip.addView(alarm)
 
         StockIconHider().hideReplaced(strip, keep = null)
 
-        assertEquals(View.INVISIBLE, wifi.visibility)
+        // Network icons collapse their slots; the battery remains as the single retained Duo slot.
+        assertEquals(View.GONE, wifi.visibility)
+        assertEquals(View.INVISIBLE, battery.visibility)
         assertEquals(View.VISIBLE, silent.visibility)
         assertEquals(View.VISIBLE, alarm.visibility)
     }
