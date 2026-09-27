@@ -51,7 +51,9 @@ internal object SystemReaders {
             if (signal == null) {
                 current
             } else {
-                val miuiLevel = readMiuiLevelFromNr(signal)?.takeIf { it in 0..4 }
+                val miuiLevel = readMiuiLevel(signal)
+                    ?.takeIf { it in 0..4 }
+                    ?: readMiuiLevelFromNr(signal)?.takeIf { it in 0..4 }
                 (miuiLevel ?: signal.level).coerceIn(0, 4)
             }
         }
@@ -67,6 +69,7 @@ internal object SystemReaders {
                 val nrField = cls.getDeclaredField("mNr")
                 nrField.isAccessible = true
                 val nr = nrField.get(signal) ?: return null
+                L.d("mNr class=" + nr.javaClass.name)
                 return readMiuiLevel(nr)
             } catch (_: NoSuchFieldException) {
                 cls = cls.superclass
@@ -75,21 +78,29 @@ internal object SystemReaders {
                 return null
             }
         }
+        L.w("mNr: field not found on " + signal.javaClass.name)
         return null
     }
 
     private fun readMiuiLevel(cell: Any): Int? {
         for (methodName in arrayOf("getMiuiLevel", "getShowMiuiLevel")) {
-            try {
-                val method = cell.javaClass.getMethod(methodName)
-                val value = method.invoke(cell)
-                if (value is Int) {
-                    L.d("miuiLevel via $methodName=$value")
-                    return value
+            var cls: Class<*>? = cell.javaClass
+            while (cls != null) {
+                try {
+                    val method = cls.getDeclaredMethod(methodName)
+                    method.isAccessible = true
+                    val value = method.invoke(cell)
+                    if (value is Int) {
+                        L.d("miuiLevel via $methodName=$value")
+                        return value
+                    }
+                    break
+                } catch (_: NoSuchMethodException) {
+                    cls = cls.superclass
+                } catch (t: Throwable) {
+                    L.w("$methodName: " + t.javaClass.simpleName + ": " + t.message)
+                    break
                 }
-            } catch (_: NoSuchMethodException) {
-            } catch (t: Throwable) {
-                L.w("$methodName: " + t.javaClass.simpleName + ": " + t.message)
             }
         }
 
