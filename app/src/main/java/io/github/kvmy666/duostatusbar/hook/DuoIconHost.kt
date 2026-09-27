@@ -266,7 +266,9 @@ internal class DuoIconHost(private val context: Context) {
         applyExtraLayout(slot)
         candidate.onReady {
             if (slot.element !== candidate) return@onReady
-            hideStock(stockHost ?: target, candidate.ui)
+            // This extra bar owns its own stock icon container; never hide the main bar's stockHost.
+            hideStock(target, candidate.ui)
+            applyExtraLayout(slot)
             candidate.reveal(settings.revealMs)
             L.i("Duo injected into $name ($logClass, ${side}px) - FR-03b")
         }
@@ -544,6 +546,8 @@ internal class DuoIconHost(private val context: Context) {
             // Hide only the actual stock icon host. The rendering host also contains status_bar_contents;
             // hiding the overlay's children would make the clock disappear.
             hideStock(stockHost ?: target, candidate.ui)
+            // Network slots collapse into the retained battery-sized Duo slot; re-anchor after reflow.
+            applyLayout()
             candidate.reveal(settings.revealMs)
             val width = candidate.ui.layoutParams?.width ?: 0
             L.i("Duo injected into ${target.javaClass.simpleName} (${width}px wide, ${settings.sizePercent}%)")
