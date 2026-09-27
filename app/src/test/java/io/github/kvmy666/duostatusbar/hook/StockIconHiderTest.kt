@@ -52,7 +52,7 @@ class StockIconHiderTest {
 
         StockIconHider().hideReplaced(strip, keep = null)
 
-        assertEquals(View.GONE, wifi.visibility)
+        assertEquals(View.INVISIBLE, wifi.visibility)
         assertEquals(View.VISIBLE, silent.visibility)
         assertEquals(View.VISIBLE, alarm.visibility)
     }
