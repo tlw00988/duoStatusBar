@@ -42,7 +42,7 @@ internal class StockIconHider {
             val child = container.getChildAt(i)
             if (child === keep) continue
             when {
-                isReplaced(child) -> hide(child)
+                isReplaced(child) -> hidePreserveSlot(child)
                 child is ViewGroup -> hideReplaced(child, keep)
             }
         }
@@ -92,6 +92,14 @@ internal class StockIconHider {
         }
         if (view is ViewGroup) {
             for (i in 0 until view.childCount) hide(view.getChildAt(i))
+        }
+    }
+
+    /** Hides a replaced icon without removing its layout slot, preventing the remaining icons from reflowing under Duo. */
+    fun hidePreserveSlot(view: View) {
+        if (view.visibility != View.INVISIBLE) {
+            rememberOriginal(view)
+            view.visibility = View.INVISIBLE
         }
     }
 
