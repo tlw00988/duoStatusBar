@@ -419,12 +419,27 @@ internal class DuoIconHost(private val context: Context) {
             // does nothing at all and a settings change can never reshape the drawing.
             if (lp == null || lp.width != side || lp.height != side) {
                 view.layoutParams = layoutParamsFor(target, side)
-                view.requestLayout()
             }
+            // status_bar_icons is a full-width overlay and has 100 px of left padding on this build.
+            // Anchor Duo to the actual stock battery slot instead of letting FrameLayout place it at
+            // the overlay's content origin (which put the 84 px view over the clock).
+            val battery = context.resources.getIdentifier(rom.batteryId, "id", rom.systemUiPackage)
+                .takeIf { it != 0 }?.let { target.rootView.findViewById<View>(it) }
+            if (view.layoutParams is android.widget.FrameLayout.LayoutParams && battery != null) {
+                val targetPos = IntArray(2)
+                val batteryPos = IntArray(2)
+                target.getLocationInWindow(targetPos)
+                battery.getLocationInWindow(batteryPos)
+                val frame = view.layoutParams as android.widget.FrameLayout.LayoutParams
+                frame.leftMargin = batteryPos[0] - targetPos[0] - target.paddingLeft
+                frame.topMargin = batteryPos[1] - targetPos[1] - target.paddingTop
+                view.layoutParams = frame
+            }
+            view.requestLayout()
             view.translationX = settings.offsetX * context.resources.displayMetrics.density
-            // The strip sits low in the window, so centring on it wastes the space above. Centre the
-            // element in the whole status bar instead, which is what lets it grow to the window height.
-            view.translationY = geometry.windowCenterShiftY(target, root)
+            // Keep the vertical alignment tied to the stock slot; the stock battery is already centred
+            // within the 144 px status-bar window on HyperOS 4.
+            view.translationY = 0f
             gestures.install(view, settings.tapAction, settings.doubleTapAction, settings.longPressAction)
         } catch (t: Throwable) {
             L.w("applyLayout: ${t.message}")
