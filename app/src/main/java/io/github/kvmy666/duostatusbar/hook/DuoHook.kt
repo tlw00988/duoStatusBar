@@ -73,6 +73,18 @@ class DuoHook(private val lp: XC_LoadPackage.LoadPackageParam) {
         }
     }
 
+    /**
+     * Coalesces shade layout churn into one settle pass. QS dragging can trigger many layout changes
+     * before the ROM finishes rebuilding its icon strip; queueing one 400 ms task per pass made those
+     * stale tasks pile up on the SystemUI main thread.
+     */
+    private val shadeSettle = Runnable {
+        L.guard("DuoHook shade settle") {
+            host?.reapplyHiding()
+            shadeHeader?.let { host?.attachShadeHeader(it) }
+        }
+    }
+
     fun install() {
         L.guard("DuoHook install") {
             L.i("=== Duo Status Bar ${BuildConfig.VERSION_NAME} (code ${BuildConfig.VERSION_CODE}) ===")
@@ -332,13 +344,9 @@ class DuoHook(private val lp: XC_LoadPackage.LoadPackageParam) {
                     // Opening the shade re-shows the main bar's icon views, so the hide pass has to run
                     // again here - the status bar's own layout pass does not fire for a shade drag. The
                     // ROM also re-shows them *after* the drag settles, so this runs again a moment later.
-                    host?.reapplyHiding()
-                    handler.postDelayed({
-                        L.guard("DuoHook shade settle") {
-                            host?.reapplyHiding()
-                            shadeHeader?.let { host?.attachShadeHeader(it) }
-                        }
-                    }, SHADE_SETTLE_MS)
+                    // Debounce the settle pass: shade dragging can emit many layout changes.
+                    handler.removeCallbacks(shadeSettle)
+                    handler.postDelayed(shadeSettle, SHADE_SETTLE_MS)
                 }
             }
         }
