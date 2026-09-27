@@ -29,7 +29,11 @@ import io.github.kvmy666.duostatusbar.hook.rom.RomDetection
  */
 internal class DuoIconHost(private val context: Context) {
 
+    // HyperOS/Xiaomi: MiuiStatusBatteryContainer has OEM measurement/layout logic that can
+    // assign arbitrary injected children a 0x0 frame. Keep stock-icon hiding on that container,
+    // but inject Duo into its ordinary parent instead.
     private var host: ViewGroup? = null
+    private var stockHost: ViewGroup? = null
     private var root: View? = null
     private var element: DuoElement? = null
 
@@ -259,7 +263,7 @@ internal class DuoIconHost(private val context: Context) {
         applyExtraLayout(slot)
         candidate.onReady {
             if (slot.element !== candidate) return@onReady
-            hideStock(target, candidate.ui)
+            hideStock(stockHost ?: target, candidate.ui)
             candidate.reveal(settings.revealMs)
             L.i("Duo injected into $name ($logClass, ${side}px) - FR-03b")
         }
@@ -464,22 +468,25 @@ internal class DuoIconHost(private val context: Context) {
                 }
                 return false
             }
-            val target = findStatusIconsHost(statusBarRoot)
-            if (target == null) {
+            val stockTarget = findStatusIconsHost(statusBarRoot)
+            if (stockTarget == null) {
                 L.w("system_icons not found - status bar left untouched")
                 return false
             }
+            // HyperOS 4's MiuiStatusBatteryContainer is a custom ViewGroup. Injecting directly into it
+            // produces a real child but the OEM onMeasure/onLayout leaves that child at 0x0. Its parent
+            // (MiuiNotificationStatusContainer on the tested device) uses ordinary ViewGroup layout.
+            val target = injectionHost(stockTarget) ?: stockTarget
             root = statusBarRoot
+            stockHost = stockTarget
             // Pin the slot width now, while the battery view still has its real width: once the stock
             // icons are hidden it reads 0 and the fallback would change the size mid-session.
-            val basePx = geometry.measuredWidth(target)
+            val basePx = geometry.measuredWidth(stockTarget)
             val candidate = createElement(statusBarRoot, stage)
             refreshSettings()
-            // Capture the size once per process: live size changes are deferred to a restart (see
-            // [SlotGeometry.appliedSize]) because resizing the Rive view live used to take System UI down.
             geometry.capture(settings.sizePercent, basePx)
             logOnce.once("facts") {
-                DuoSbFacts.report(context, statusBarRoot, target, geometry.widthPx(target))
+                DuoSbFacts.report(context, statusBarRoot, stockTarget, geometry.widthPx(stockTarget))
             }
             val side = geometry.sidePx(target, root)
             allowOverflow(target)
@@ -487,11 +494,12 @@ internal class DuoIconHost(private val context: Context) {
             target.addView(candidate.ui)
             host = target
             element = candidate
+            logOnce.once("injection-target") {
+                L.i("injection target=" + target.javaClass.simpleName + ", stock host=" +
+                        stockTarget.javaClass.simpleName + ", base=" + basePx + "px, side=" + side + "px")
+            }
             applyLayout()
             clock.apply(root, settings.systemClockFont)
-            // The stock icons are hidden and the first reveal fires only once the element reports itself
-            // live. A Rive state machine binds *after* this method returns (it needs the view attached to a
-            // window), so hiding here would cover an empty slot; Canvas reports ready immediately.
             candidate.onReady { onElementReady(candidate, target) }
             candidate.onFailed { onElementFailed(candidate, target) }
             forgetAttemptsAfterSurvival(candidate)
@@ -607,6 +615,7 @@ internal class DuoIconHost(private val context: Context) {
         // The clock is re-inflated with the strip on some ROMs, so its font is re-applied here too.
         clock.apply(root, settings.systemClockFont)
         val target = host ?: return
+        val stockTarget = stockHost ?: target
         val keep = element?.ui ?: return
         // Never hide the stock icons over an element that is not drawing yet: a layout pass can arrive
         // before Rive has bound its view model, and hiding then would leave a blank stretch of status bar.
@@ -619,7 +628,7 @@ internal class DuoIconHost(private val context: Context) {
             return
         }
         try {
-            hideStock(target, keep)
+            hideStock(stockTarget, keep)
         } catch (t: Throwable) {
             L.w("reapplyHiding: ${t.message}")
         }
@@ -637,7 +646,9 @@ internal class DuoIconHost(private val context: Context) {
         if (view.parent === target && view.isAttachedToWindow) return true
         return try {
             (view.parent as? ViewGroup)?.removeView(view)
-            val fresh = root?.let { findStatusIconsHost(it) } ?: target
+            val freshStock = root?.let { findStatusIconsHost(it) } ?: target
+            val fresh = injectionHost(freshStock) ?: freshStock
+            stockHost = freshStock
             host = fresh
             fresh.addView(view)
             applyLayout()
@@ -669,6 +680,7 @@ internal class DuoIconHost(private val context: Context) {
         clock.restore()
         geometry.reset()
         host = null
+        stockHost = null
         root = null
     }
 
@@ -702,6 +714,19 @@ internal class DuoIconHost(private val context: Context) {
             view = view.parent as? View
         }
         return null
+    }
+
+    /**
+     * Selects a parent suitable for arbitrary injected children.
+     *
+     * Xiaomi HyperOS 4 wraps the actual icon strip in MiuiStatusBatteryContainer. That OEM
+     * ViewGroup can measure unknown children as 0x0. Keeping the stock strip as a separate host
+     * lets us hide its icons without forcing Duo itself through that custom measurement path.
+     */
+    private fun injectionHost(stock: ViewGroup): ViewGroup? {
+        val parent = stock.parent as? ViewGroup ?: return null
+        if (parent === root) return null
+        return parent
     }
 
     /**
