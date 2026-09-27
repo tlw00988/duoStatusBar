@@ -79,19 +79,37 @@ internal object SystemReaders {
     }
 
     private fun readMiuiLevel(cell: Any): Int? {
-        var cls: Class<*>? = cell.javaClass
-        while (cls != null) {
+        for (methodName in arrayOf("getMiuiLevel", "getShowMiuiLevel")) {
             try {
-                val field = cls.getDeclaredField("miuiLevel")
-                field.isAccessible = true
-                return field.getInt(cell)
-            } catch (_: NoSuchFieldException) {
-                cls = cls.superclass
+                val method = cell.javaClass.getMethod(methodName)
+                val value = method.invoke(cell)
+                if (value is Int) {
+                    L.d("miuiLevel via $methodName=$value")
+                    return value
+                }
+            } catch (_: NoSuchMethodException) {
             } catch (t: Throwable) {
-                L.w("miuiLevel: " + t.javaClass.simpleName + ": " + t.message)
-                return null
+                L.w("$methodName: " + t.javaClass.simpleName + ": " + t.message)
             }
         }
+
+        var cls: Class<*>? = cell.javaClass
+        while (cls != null) {
+            for (fieldName in arrayOf("miuiLevel", "mMiuiLevel")) {
+                try {
+                    val field = cls.getDeclaredField(fieldName)
+                    field.isAccessible = true
+                    val value = field.getInt(cell)
+                    L.d("miuiLevel via $fieldName=$value")
+                    return value
+                } catch (_: NoSuchFieldException) {
+                } catch (t: Throwable) {
+                    L.w("$fieldName: " + t.javaClass.simpleName + ": " + t.message)
+                }
+            }
+            cls = cls.superclass
+        }
+        L.w("miuiLevel: no Xiaomi accessor/field on " + cell.javaClass.name)
         return null
     }
 
