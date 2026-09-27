@@ -48,14 +48,11 @@ internal object SystemReaders {
             val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
             val signal = tm?.signalStrength ?: current
 
-            // Xiaomi's CellSignalStrengthNr carries the level used by MIUI's own status bar in
-            // addition to the AOSP level. On the affected HyperOS build these can differ
-            // substantially (for example, level=1 while miuiLevel=4). Read the vendor value
-            // reflectively so the module stays buildable against the public Android SDK.
-            val miuiLevel = signal.cellSignalStrengths
-                .asSequence()
-                .mapNotNull { readMiuiLevel(it) }
-                .firstOrNull { it in 0..4 }
+            // Xiaomi's NR object is exposed internally as SignalStrength.mNr. Read it
+            // directly instead of relying on newer CellSignalStrength collection APIs,
+            // because this module compiles against the public SDK.
+            val miuiLevel = readMiuiLevelFromNr(signal)
+                ?.takeIf { it in 0..4 }
 
             (miuiLevel ?: signal.level).coerceIn(0, 4)
         }
@@ -64,24 +61,18 @@ internal object SystemReaders {
         current
     }
 
-    /**
-     * Reads Xiaomi's private miuiLevel from a CellSignalStrength instance.
-     *
-     * This deliberately uses the runtime class rather than assuming a particular framework JAR:
-     * Xiaomi has moved/changed the private telephony implementation across releases. A failed
-     * lookup simply falls back to the standard SignalStrength level.
-     */
-    private fun readMiuiLevel(cell: Any): Int? {
-        var cls: Class<*>? = cell.javaClass
+    private fun readMiuiLevelFromNr(signal: Any): Int? {
+        var cls: Class<*>? = signal.javaClass
         while (cls != null) {
             try {
-                val field = cls.getDeclaredField("miuiLevel")
-                field.isAccessible = true
-                return field.getInt(cell)
+                val nrField = cls.getDeclaredField("mNr")
+                nrField.isAccessible = true
+                val nr = nrField.get(signal) ?: return null
+                return readMiuiLevel(nr)
             } catch (_: NoSuchFieldException) {
                 cls = cls.superclass
             } catch (t: Throwable) {
-                L.w("miuiLevel: ${t.javaClass.simpleName}: ${t.message}")
+                L.w("mNr: ${t.javaClass.simpleName}: ${t.message}")
                 return null
             }
         }
