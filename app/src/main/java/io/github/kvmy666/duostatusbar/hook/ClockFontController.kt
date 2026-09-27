@@ -37,7 +37,15 @@ internal class ClockFontController(private val context: Context, private val rom
             val view = root ?: return
             val id = context.resources.getIdentifier(rom.clockId, "id", rom.systemUiPackage)
             if (id == 0) return
-            val clock = view.findViewById<View>(id) as? TextView ?: return
+
+            // Reuse the resolved clock during ordinary layout passes. Only walk the status-bar
+            // hierarchy again when the ROM has actually replaced or detached the clock view.
+            val cached = clockView
+            val clock = if (cached != null && cached.isAttachedToWindow && cached.rootView === view.rootView) {
+                cached
+            } else {
+                view.findViewById<View>(id) as? TextView ?: return
+            }
             if (clockView !== clock) {
                 clockView = clock
                 clockOriginalTypeface = clock.typeface
