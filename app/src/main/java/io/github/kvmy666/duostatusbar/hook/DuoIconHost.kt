@@ -432,7 +432,9 @@ internal class DuoIconHost(private val context: Context) {
                 battery.getLocationInWindow(batteryPos)
                 val frame = view.layoutParams as android.widget.FrameLayout.LayoutParams
                 frame.leftMargin = batteryPos[0] - targetPos[0] - target.paddingLeft
-                frame.topMargin = batteryPos[1] - targetPos[1] - target.paddingTop
+                // Center Duo in the full status-bar overlay instead of inheriting the stock battery's
+                // 8 px low OEM slot alignment.
+                frame.topMargin = (target.height - side).coerceAtLeast(0) / 2
                 view.layoutParams = frame
             }
             view.requestLayout()
@@ -536,7 +538,9 @@ internal class DuoIconHost(private val context: Context) {
     private fun onElementReady(candidate: DuoElement, target: ViewGroup) {
         if (element !== candidate) return
         try {
-            hideStock(target, candidate.ui)
+            // Hide only the actual stock icon host. The rendering host also contains status_bar_contents;
+            // hiding the overlay's children would make the clock disappear.
+            hideStock(stockHost ?: target, candidate.ui)
             candidate.reveal(settings.revealMs)
             val width = candidate.ui.layoutParams?.width ?: 0
             L.i("Duo injected into ${target.javaClass.simpleName} (${width}px wide, ${settings.sizePercent}%)")
