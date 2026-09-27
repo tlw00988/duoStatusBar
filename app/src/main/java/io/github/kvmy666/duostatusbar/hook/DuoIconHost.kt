@@ -156,7 +156,6 @@ internal class DuoIconHost(private val context: Context) {
      * the element is not drawing in. If anything fails, that bar keeps its stock icons.
      */
     fun attachExtra(name: String, root: View, stripId: String): Boolean {
-        if (extras.any { it.name == name }) return true
         if (element == null) return false
         return try {
             val stage = guard.stage()
@@ -222,8 +221,20 @@ internal class DuoIconHost(private val context: Context) {
         cap: View? = null,
         center: Boolean = true
     ): Boolean {
-        if (extras.any { it.name == name }) return true
         if (element == null) return false
+
+        // The QS header can be recreated during shade expansion/collapse. A stale ExtraBar must not
+        // suppress attaching Duo to the new header instance.
+        extras.firstOrNull { it.name == name }?.let { existing ->
+            val existingView = existing.element?.ui
+            if (existing.container === target && existingView?.parent === target && existingView.isAttachedToWindow) {
+                applyExtraLayout(existing)
+                return true
+            }
+            runCatching { existingView?.let { existing.container?.removeView(it) } }
+            runCatching { existing.element?.teardown() }
+            extras.remove(existing)
+        }
         return try {
             val stage = guard.stage()
             if (stage == DuoGuard.OFF) return false
