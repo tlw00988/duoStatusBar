@@ -453,7 +453,8 @@ internal class DuoIconHost(private val context: Context) {
                 frame.topMargin = (target.height - side).coerceAtLeast(0) / 2
                 view.layoutParams = frame
             }
-            view.requestLayout()
+            // Only changing LayoutParams above can require a traversal. An unconditional
+            // requestLayout() here turns every reapply into another SystemUI traversal.
             view.translationX = settings.offsetX * context.resources.displayMetrics.density
             // Keep the vertical alignment tied to the stock slot; the stock battery is already centred
             // within the 144 px status-bar window on HyperOS 4.
