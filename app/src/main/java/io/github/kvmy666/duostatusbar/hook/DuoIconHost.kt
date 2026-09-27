@@ -93,7 +93,7 @@ internal class DuoIconHost(private val context: Context) {
                         hider.hide(view)
                     } else if (hider.isReplaced(view)) {
                         // Preserve the original slot so remaining status icons do not reflow under Duo.
-                        hider.hidePreserveSlot(view)
+                        hider.hideReplacedView(view)
                     } else {
                         logOnce.once("kept:${view.javaClass.simpleName}") {
                             L.i("keeping a status icon: ${view.javaClass.simpleName} - FR-08b")
