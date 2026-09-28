@@ -174,6 +174,22 @@ internal class DuoIconHost(private val context: Context) {
             }
             val target = found as? ViewGroup ?: return false
             if (target === host) return true // same strip as the main bar: nothing extra to do
+
+            // Keyguard bars can be recreated too. Do not let an old ExtraBar record suppress the new
+            // container, and do not create a second Duo view when the same container is still alive.
+            extras.firstOrNull { it.name == name }?.let { existing ->
+                val existingView = existing.element?.ui
+                if (existing.container === target &&
+                    existingView?.parent === target &&
+                    existingView.isAttachedToWindow
+                ) {
+                    return true
+                }
+                runCatching { existingView?.let { existing.container?.removeView(it) } }
+                runCatching { existing.element?.teardown() }
+                extras.remove(existing)
+            }
+
             // Centre on the *bar*, not the window it lives in: the shade window is the whole screen, so
             // centring on it put the element 1300 px down the lock screen (measured).
             val bar = findBar(target) ?: target
@@ -192,7 +208,8 @@ internal class DuoIconHost(private val context: Context) {
      * found by walking up from the `statusIcons` container the controller itself binds to.
      */
     fun attachShadeHeader(header: View): Boolean {
-        if (extras.any { it.name == "shade header" }) return true
+        // The QS header is frequently recreated. attachExtraView() owns the stale-instance check;
+        // never let the mere presence of an old ExtraBar suppress the new header.
         val area = findShadeIconsArea(header)
         if (area == null) {
             logOnce.once("missing:shade header") {
