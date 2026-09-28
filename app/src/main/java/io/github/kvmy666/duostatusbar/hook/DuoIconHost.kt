@@ -69,47 +69,42 @@ internal class DuoIconHost(private val context: Context) {
     }
 
     /**
-     * FR-03b: called as each icon view is added to a status icon container (hooked at
-     * `StatusIconContainer.addView`).
+     * Called from StatusIconContainer.addView(). Do not mutate the hierarchy from inside addView:
+     * HyperOS rebuilds the shade icon containers during QS expansion, and changing visibility/
+     * LayoutParams from this callback can recursively trigger layout work while SystemUI is still
+     * inside its own hierarchy mutation.
      *
-     * Hiding on a layout pass is not enough on the shade header: the ROM repopulates `statusIcons`
-     * *after* the pass, so the icons came straight back. This hides each one at the moment it arrives,
-     * which is the only moment the ROM cannot undo.
+     * Just schedule the hiding pass. The pass runs after the addView call has returned, so SystemUI
+     * gets to finish its own insertion first.
      */
     fun onStatusIconAdded(view: View) {
+        if (view === element?.ui || extras.any { it.element?.ui === view }) return
         try {
-            if (view === element?.ui || extras.any { it.element?.ui === view }) return
             var parent: View? = view.parent as? View
             while (parent != null) {
                 if (parent === host || extras.any { it.container === parent }) {
-                    val container = parent
-                    logOnce.once("added:${view.javaClass.simpleName}") {
-                        L.i("hiding a status icon as it arrives: ${view.javaClass.simpleName} in " +
-                                "${container.javaClass.simpleName}")
-                    }
-                    // FR-08b: with "hide other icons" off, only the icons Duo replaces are hidden; the
-                    // silent/vibrate/alarm ones are left for the user.
-                    if (settings.hideOtherIcons) {
-                        hider.hide(view)
-                    } else if (hider.isReplaced(view)) {
-                        // Preserve the original slot so remaining status icons do not reflow under Duo.
-                        hider.hideReplacedView(view)
-                    } else {
-                        logOnce.once("kept:${view.javaClass.simpleName}") {
-                            L.i("keeping a status icon: ${view.javaClass.simpleName} - FR-08b")
-                        }
-                    }
+                    scheduleHidingPass()
                     return
                 }
                 parent = parent.parent as? View
             }
-            logOnce.once("unmanaged:${view.javaClass.simpleName}") {
-                L.i("status icon arrived in an unmanaged container: ${view.javaClass.simpleName} " +
-                        "parent=${(view.parent as? View)?.javaClass?.simpleName}")
-            }
         } catch (t: Throwable) {
-            L.w("icon added: ${t.javaClass.simpleName}: ${t.message}")
+            L.w("icon added: " + t.javaClass.simpleName + ": " + t.message)
         }
+    }
+
+    private val hidingHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val hidingPass = Runnable {
+        try {
+            reapplyHiding()
+        } catch (t: Throwable) {
+            L.w("scheduled hiding: " + t.javaClass.simpleName + ": " + t.message)
+        }
+    }
+
+    private fun scheduleHidingPass() {
+        hidingHandler.removeCallbacks(hidingPass)
+        hidingHandler.post(hidingPass)
     }
 
     private val extras = ArrayList<ExtraBar>()
