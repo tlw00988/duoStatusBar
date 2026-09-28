@@ -296,6 +296,11 @@ internal class DuoIconHost(private val context: Context) {
             if (slot.element !== candidate) return@onReady
             // This extra bar owns its own stock icon container; never hide the main bar's stockHost.
             hideStock(target, candidate.ui)
+            // On the keyguard bar HyperOS places the battery meter as a sibling/overlay of
+            // system_icons rather than a child of that strip. Hiding the strip therefore does not
+            // hide the stock battery, which can be drawn on top of Duo. Explicitly hide the battery
+            // belonging to this extra bar after Duo is ready.
+            hideExtraBattery(slot, elementRoot, candidate.ui)
             applyExtraLayout(slot)
             candidate.reveal(settings.revealMs)
             L.i("Duo injected into $name ($logClass, ${side}px) - FR-03b")
@@ -308,6 +313,37 @@ internal class DuoIconHost(private val context: Context) {
             extras.remove(slot)
         }
         return true
+    }
+
+    /**
+     * HyperOS keyguard/shade layouts may keep the battery meter outside the icon strip. The normal
+     * hideStock() walk cannot reach that sibling, so hide the battery only when it belongs to this
+     * extra bar's cap/root. This is deliberately scoped to the extra bar; the main bar keeps its
+     * separate stockHost handling.
+     */
+    private fun hideExtraBattery(slot: ExtraBar, root: View, keep: View?) {
+        val id = context.resources.getIdentifier(rom.batteryId, "id", rom.systemUiPackage)
+        if (id == 0) return
+        val battery = root.findViewById<View>(id) ?: return
+        if (battery === keep) return
+
+        var p: View? = battery.parent as? View
+        val cap = slot.bar
+        var belongsToBar = false
+        while (p != null) {
+            if (p === cap || p === slot.container) {
+                belongsToBar = true
+                break
+            }
+            p = p.parent as? View
+        }
+        if (!belongsToBar) return
+
+        if (settings.hideOtherIcons) {
+            hider.hide(battery)
+        } else if (hider.isReplaced(battery)) {
+            hider.hideReplacedView(battery)
+        }
     }
 
     /** The container decides the LayoutParams type: the strips are LinearLayouts, the shade header is not. */
