@@ -327,14 +327,10 @@ class DuoHook(private val lp: XC_LoadPackage.LoadPackageParam) {
 
     private fun attachLayoutListener(root: View) {
         L.guard("DuoHook layout listener") {
-            root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-                L.guard("DuoHook onLayout") {
-                    // Hide pass only. Do NOT re-read system state here: the status bar re-lays out on
-                    // every clock tick, and refreshing Wi-Fi/cell/etc plus re-rendering Rive on each one
-                    // kept SystemUI awake at ~1 Hz — the battery drain. State is already broadcast-driven.
-                    host?.reapplyHiding()
-                }
-            }
+            // Do not observe the main status-bar layout. It is part of the animation/render path
+            // (clock ticks, QS transitions, rotation, icon changes). Re-hiding from this callback made
+            // Duo participate in every layout pass. Icon additions are handled by StatusIconContainer.addView,
+            // while the shade has its own debounced settle path below.
             // The keyguard's bar is inflated into the shade window when the lock screen appears, and the
             // shade window is the one that changes then - so its layout pass is the trigger for the
             // second hiding pass (FR-03b).
