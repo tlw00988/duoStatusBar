@@ -79,9 +79,10 @@ class DuoHook(private val lp: XC_LoadPackage.LoadPackageParam) {
      * stale tasks pile up on the SystemUI main thread.
      */
     private val shadeSettle = Runnable {
+        val shade = shadeRoot ?: return@Runnable
         L.guard("DuoHook shade settle") {
+            attachExtraBars(shade)
             host?.reapplyHiding()
-            shadeHeader?.let { host?.attachShadeHeader(it) }
         }
     }
 
@@ -339,15 +340,11 @@ class DuoHook(private val lp: XC_LoadPackage.LoadPackageParam) {
             // second hiding pass (FR-03b).
             val shade = shadeRoot
             shade?.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-                L.guard("DuoHook onShadeLayout") {
-                    attachExtraBars(shade)
-                    // Opening the shade re-shows the main bar's icon views, so the hide pass has to run
-                    // again here - the status bar's own layout pass does not fire for a shade drag. The
-                    // ROM also re-shows them *after* the drag settles, so this runs again a moment later.
-                    // Debounce the settle pass: shade dragging can emit many layout changes.
-                    handler.removeCallbacks(shadeSettle)
-                    handler.postDelayed(shadeSettle, SHADE_SETTLE_MS)
-                }
+                // Shade expansion generates many layout passes per frame. Defer all Duo hierarchy work
+                // until the gesture settles; keeping attach/re-hide off the animation path avoids
+                // repeatedly traversing the OEM icon containers on the SystemUI main thread.
+                handler.removeCallbacks(shadeSettle)
+                handler.postDelayed(shadeSettle, SHADE_SETTLE_MS)
             }
         }
     }
