@@ -99,47 +99,70 @@ class DuoHook(private val lp: XC_LoadPackage.LoadPackageParam) {
         return DuoIconHost(ctx).also { host = it }
     }
 
+    private fun onAppReady(ctx: Application) {
+        L.guard("DuoHook onAppReady") {
+            app = ctx
+            // The gate is read before anything is hooked: while the module is off it
+            // leaves no trace in this process at all, so a fresh install cannot affect
+            // the status bar until someone asks it to.
+            val guard = DuoGuard(ctx)
+            val stage = guard.stage()
+            // Heartbeat before the gate: it is how the app tells "LSPosed never injected
+            // the module" apart from "the module ran but is switched off". Two signals:
+            // a Settings.Global stamp, and a provider report. The provider needs no
+            // permission, so the About screen cannot show a false "never" on a ROM that
+            // denies SystemUI WRITE_SECURE_SETTINGS (the Global write then fails silently).
+            L.guard("DuoHook heartbeat") {
+                guard.noteLoaded()
+                DuoSettingsClient.report(ctx, "loaded · stage=$stage")
+                // A fresh load clears any previous fallback alert; a fallback during this
+                // run is reported from DuoIconHost when it happens.
+                DuoSettingsClient.reportFallback(ctx, "")
+            }
+            if (stage == DuoGuard.OFF) {
+                L.i("gated off - nothing hooked. Enable with: ${guard.enableHint}, then restart SystemUI")
+                return@guard
+            }
+            L.i("application ready: ${ctx.packageName} (stage $stage)")
+            ensureHost(ctx)
+            hookWindowManagerAddView()
+            hookShadeHeader()
+            hookStatusIconContainer()
+            hookBarAppearance()
+            hookSettingsChanges(ctx)
+        }
+    }
+
     private fun hookApplication() {
-        L.guard("DuoHook hook Application") {
+        L.i("hookApplication started")
+        try {
+            // Fix for GSI/Custom ROMs where Vector/Zygisk injects late:
+            L.i("Finding ActivityThread...")
+            val activityThreadClass = XposedHelpers.findClass("android.app.ActivityThread", null)
+            L.i("Calling currentApplication...")
+            val currentApp = XposedHelpers.callStaticMethod(activityThreadClass, "currentApplication") as? Application
+            L.i("currentApp is null: ${currentApp == null}")
+            
+            if (currentApp != null) {
+                L.i("Late injection detected: Application is already running. Initializing immediately.")
+                onAppReady(currentApp)
+                return
+            }
+
+            // Normal cold-boot hook
+            L.i("Setting up cold-boot hook on SystemUIApplication.onCreate...")
             XposedHelpers.findAndHookMethod(
-                "android.app.Application", lp.classLoader, "onCreate",
+                "com.android.systemui.SystemUIApplication", lp.classLoader, "onCreate",
                 object : XC_MethodHook() {
                     override fun afterHookedMethod(param: MethodHookParam) {
-                        L.guard("DuoHook Application.onCreate") {
-                            val ctx = param.thisObject as Application
-                            app = ctx
-                            // The gate is read before anything is hooked: while the module is off it
-                            // leaves no trace in this process at all, so a fresh install cannot affect
-                            // the status bar until someone asks it to.
-                            val guard = DuoGuard(ctx)
-                            val stage = guard.stage()
-                            // Heartbeat before the gate: it is how the app tells "LSPosed never injected
-                            // the module" apart from "the module ran but is switched off". Two signals:
-                            // a Settings.Global stamp, and a provider report. The provider needs no
-                            // permission, so the About screen cannot show a false "never" on a ROM that
-                            // denies SystemUI WRITE_SECURE_SETTINGS (the Global write then fails silently).
-                            L.guard("DuoHook heartbeat") {
-                                guard.noteLoaded()
-                                DuoSettingsClient.report(ctx, "loaded · stage=$stage")
-                                // A fresh load clears any previous fallback alert; a fallback during this
-                                // run is reported from DuoIconHost when it happens.
-                                DuoSettingsClient.reportFallback(ctx, "")
-                            }
-                            if (stage == DuoGuard.OFF) {
-                                L.i("gated off - nothing hooked. Enable with: ${guard.enableHint}, then restart SystemUI")
-                                return@guard
-                            }
-                            L.i("application ready: ${ctx.packageName} (stage $stage)")
-                            ensureHost(ctx)
-                            hookWindowManagerAddView()
-                            hookShadeHeader()
-                            hookStatusIconContainer()
-                            hookBarAppearance()
-                            hookSettingsChanges(ctx)
-                        }
+                        L.i("SystemUIApplication.onCreate fired!")
+                        onAppReady(param.thisObject as Application)
                     }
                 }
             )
+            L.i("cold-boot hook successfully installed")
+        } catch (t: Throwable) {
+            L.e("hookApplication FAILED -> ${t.javaClass.name}: ${t.message}")
         }
     }
 

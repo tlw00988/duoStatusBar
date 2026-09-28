@@ -103,6 +103,10 @@ Taps on the element are handled by my other module,
 things simple and safe: **Duo draws, Auto Expand acts.** With the default "No Action", the element doesn't
 consume a single touch — so your usual status bar gestures keep working untouched.
 
+## 🛠️ Technical Fixes
+
+* **Android 16 GSI / Late Injection Fix:** On certain Android 16 GSI ROMs (e.g., DerpFest) and with newer hooking frameworks like Vector, `SystemUI` may already be running by the time the module is injected, or the system might bypass the standard `android.app.Application.onCreate` lifecycle. The module now explicitly hooks `com.android.systemui.SystemUIApplication` and includes a fallback to detect if `ActivityThread.currentApplication()` is already active, ensuring instant initialization without hanging indefinitely.
+
 ## ❓ Questions people ask
 
 **Will this slow down my phone?**
